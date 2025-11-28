@@ -10,7 +10,7 @@
          exist in the same schema.
       2. `organization(id)` already contains the org that should own the
          migrated rows (default = 1).
-      3. Legacy `expense_receipts` contains `id`, `receipt_url`,
+      3. Legacy `expense_receipts` contains `id`, `receipt_filename`,
          `createdby`, `modifiedby`, `createddate`, `modifieddate`,
          `isactive`, and `expense_id`. Adjust column names if they differ.
       4. Legacy `expenses` contains `type_id`, `emp_id`, `approver_name`
@@ -321,7 +321,7 @@ BEGIN
         createddate,
         modifieddate,
         isactive,
-        receipt_url, -- Replace with the actual legacy column if different
+        receipt_filename, -- Replace with the actual legacy column if different
         1
     FROM expense_receipts;
 
