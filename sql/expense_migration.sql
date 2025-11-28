@@ -16,7 +16,7 @@
       4. Legacy `expenses` contains `type_id`, `emp_id`, `approver_name`
          and (optionally) `receipt_id`. Update the cursor SELECT if your
          schema uses different column names.
-      5. `employees_main_summary_table` exposes `employee_id` and
+      5. `main_employees_summary` exposes `employee_id` and
          `employee_name` columns, which are used to derive creator and
          approver names. Update these column references if needed.
 */
@@ -546,7 +546,7 @@ BEGIN
 
         SET v_manager_name = (
             SELECT employee_name
-            FROM employees_main_summary_table
+            FROM main_employees_summary
             WHERE employee_id = v_manager_id
             LIMIT 1
         );
@@ -559,7 +559,7 @@ BEGIN
 
         SET v_emp_name = (
             SELECT employee_name
-            FROM employees_main_summary_table
+            FROM main_employees_summary
             WHERE employee_id = v_emp_id
             LIMIT 1
         );
