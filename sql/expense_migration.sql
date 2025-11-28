@@ -16,6 +16,9 @@
       4. Legacy `expenses` contains `type_id`, `emp_id`, `approver_name`
          and (optionally) `receipt_id`. Update the cursor SELECT if your
          schema uses different column names.
+      5. `employees_main_summary_table` exposes `employee_id` and
+         `employee_name` columns, which are used to derive creator and
+         approver names. Update these column references if needed.
 */
 
 -- ============================================================================
@@ -458,6 +461,9 @@ BEGIN
     DECLARE v_approver_name VARCHAR(100);
     DECLARE v_legacy_receipt_id INT;
     DECLARE v_receipt_id INT;
+    DECLARE v_event_name VARCHAR(255);
+    DECLARE v_emp_name VARCHAR(100);
+    DECLARE v_manager_name VARCHAR(100);
 
     DECLARE dec_amount DECIMAL(20,4);
     DECLARE dec_unit_amount DECIMAL(20,4);
@@ -531,8 +537,35 @@ BEGIN
             SET v_emp_id = NULL;
         END IF;
 
-        IF v_approver_name IS NULL AND v_manager_id IS NOT NULL THEN
+        SET v_event_name = (
+            SELECT trip_name
+            FROM expense_trips
+            WHERE id = v_trip_id
+            LIMIT 1
+        );
+
+        SET v_manager_name = (
+            SELECT employee_name
+            FROM employees_main_summary_table
+            WHERE employee_id = v_manager_id
+            LIMIT 1
+        );
+
+        IF v_manager_name IS NOT NULL THEN
+            SET v_approver_name = v_manager_name;
+        ELSEIF v_approver_name IS NULL AND v_manager_id IS NOT NULL THEN
             SET v_approver_name = CONCAT('Manager #', v_manager_id);
+        END IF;
+
+        SET v_emp_name = (
+            SELECT employee_name
+            FROM employees_main_summary_table
+            WHERE employee_id = v_emp_id
+            LIMIT 1
+        );
+
+        IF v_emp_name IS NULL THEN
+            SET v_emp_name = COALESCE(v_createdby,'System');
         END IF;
 
         SET v_receipt_id = v_legacy_receipt_id;
@@ -587,9 +620,7 @@ BEGIN
                 1,
                 v_expense_date,
                 v_approver_name,
-                (
-                    SELECT name FROM event WHERE id = v_trip_id LIMIT 1
-                ),
+                v_event_name,
                 v_expense_currency_id,
                 v_accountId,
                 v_project_id,
@@ -601,7 +632,7 @@ BEGIN
                 v_status_id,
                 COALESCE(v_is_reimbursable,0),
                 COALESCE(v_isactive,1),
-                COALESCE(v_createdby,'System'),
+                v_emp_name,
                 COALESCE(v_createddate, CURRENT_TIMESTAMP),
                 COALESCE(v_modifiedby,NULL),
                 v_modifieddate
@@ -620,8 +651,8 @@ BEGIN
                 dec_unit_amount,
                 dec_amount,
                 v_expense_payment_id,
-                v_description,
-                COALESCE(v_createdby,'System'),
+                COALESCE(v_expense_name, v_description),
+                v_emp_name,
                 COALESCE(v_modifiedby,NULL),
                 v_createddate,
                 v_modifieddate,
