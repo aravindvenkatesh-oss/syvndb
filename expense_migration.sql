@@ -1,17 +1,13 @@
 -- Pure SQL migration (no PROCEDURE required). Review and backup DB before running.
 SET @now = CURRENT_TIMESTAMP;
 SET @prev_sql_safe_updates := @@SQL_SAFE_UPDATES;
+SET @prev_fk_checks := @@FOREIGN_KEY_CHECKS;
 SET SQL_SAFE_UPDATES = 0;
+SET FOREIGN_KEY_CHECKS = 0;
+TRUNCATE TABLE expense;
+TRUNCATE TABLE expense_report;
+SET FOREIGN_KEY_CHECKS = @prev_fk_checks;
 START TRANSACTION;
-
--- Allow safe re-runs by removing previously migrated data tagged via MIG_EXP#
-DELETE exp
-FROM expense exp
-JOIN expense_report er ON exp.expenseReportId = er.id
-WHERE er.createdBy LIKE 'MIG_EXP#%';
-
-DELETE FROM expense_report
-WHERE createdBy LIKE 'MIG_EXP#%';
 
 -- Insert expense_report rows. Use a migration tag in createdBy to map newly created report ids back to original expense rows.
 INSERT INTO expense_report (
