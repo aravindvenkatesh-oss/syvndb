@@ -58,7 +58,7 @@ SELECT
       SELECT CASE
                WHEN mes.division_json IS NULL THEN NULL
                ELSE LEFT(
-                      JSON_UNQUOTE(JSON_EXTRACT(mes.division_json, '$[0].name')),
+                      JSON_UNQUOTE(JSON_EXTRACT(mes.division_json, '$[0].code')),
                       3
                     )
              END
@@ -183,6 +183,16 @@ WHERE
 UPDATE expense_report
 SET createdBy = SUBSTRING_INDEX(createdBy, '#', -1)
 WHERE createdBy LIKE 'MIG_EXP#%';
+
+SELECT id INTO @inrId
+FROM currency
+WHERE code = 'INR'
+LIMIT 1;
+
+UPDATE expense_report er
+LEFT JOIN currency c ON er.currencyId = c.id
+SET er.currencyId = @inrId
+WHERE c.id IS NULL;
 
 SET SQL_SAFE_UPDATES = 1;
 COMMIT;
