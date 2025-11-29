@@ -10,19 +10,6 @@ SET FOREIGN_KEY_CHECKS = @prev_fk_checks;
 START TRANSACTION;
 
 -- Insert expense_report rows. Use a migration tag in createdBy to map newly created report ids back to original expense rows.
-WITH sanitized_expenses AS (
-    SELECT
-        e.*,
-        REPLACE(
-            REPLACE(
-                REPLACE(
-                    REPLACE(
-                        REPLACE(
-                            REPLACE(TRIM(e.expense_amount), ',', ''),
-                        '(', ''),')', ''), '$',''), '€',''), '₹',''
-        ) AS sanitized_amount
-    FROM expenses e
-)
 INSERT INTO expense_report (
     orgId, submittedAt, approverName, eventName, currencyId,
     accountCode, projectCode, empId, typeId, deptCode, division,
@@ -118,10 +105,7 @@ SELECT
            )
     END AS modifiedBy,
     s.modifieddate AS modifiedAt
-FROM sanitized_expenses s;
-
--- Insert expense rows, matching the generated report via migration tag, and populate receiptId, emp/dept/division lookups.
-WITH sanitized_expenses AS (
+FROM (
     SELECT
         e.*,
         REPLACE(
@@ -130,11 +114,12 @@ WITH sanitized_expenses AS (
                     REPLACE(
                         REPLACE(
                             REPLACE(TRIM(e.expense_amount), ',', ''),
-                        '(', ''),')', ''), '$', ''), '€', ''), '₹', ''
-        ) AS sanitized_amount,
-        REPLACE(REPLACE(REPLACE(TRIM(e.expense_quantity), ',', ''), '(', ''), ')', '') AS sanitized_qty
+                        '(', ''),')', ''), '$',''), '€',''), '₹',''
+        ) AS sanitized_amount
     FROM expenses e
-)
+) AS s;
+
+-- Insert expense rows, matching the generated report via migration tag, and populate receiptId, emp/dept/division lookups.
 INSERT INTO expense (
     categoryId, date, qty, rate, amount, paymentTypeId, description,
     createdBy, modifiedBy, createdAt, modifiedAt, isNotDeleted,
@@ -192,7 +177,20 @@ SELECT
   NULL AS vendorName,
   1 AS orgId,
   0 AS tax
-FROM sanitized_expenses s;
+FROM (
+    SELECT
+        e.*,
+        REPLACE(
+            REPLACE(
+                REPLACE(
+                    REPLACE(
+                        REPLACE(
+                            REPLACE(TRIM(e.expense_amount), ',', ''),
+                        '(', ''),')', ''), '$', ''), '€', ''), '₹', ''
+        ) AS sanitized_amount,
+        REPLACE(REPLACE(REPLACE(TRIM(e.expense_quantity), ',', ''), '(', ''), ')', '') AS sanitized_qty
+    FROM expenses e
+) AS s;
 
 -- Restore createdBy in expense_report to the original value (remove the migration tag)
 UPDATE expense_report
