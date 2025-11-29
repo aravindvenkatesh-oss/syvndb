@@ -1,7 +1,17 @@
 -- Pure SQL migration (no PROCEDURE required). Review and backup DB before running.
 SET @now = CURRENT_TIMESTAMP;
+SET @prev_sql_safe_updates := @@SQL_SAFE_UPDATES;
 SET SQL_SAFE_UPDATES = 0;
 START TRANSACTION;
+
+-- Allow safe re-runs by removing previously migrated data tagged via MIG_EXP#
+DELETE exp
+FROM expense exp
+JOIN expense_report er ON exp.expenseReportId = er.id
+WHERE er.createdBy LIKE 'MIG_EXP#%';
+
+DELETE FROM expense_report
+WHERE createdBy LIKE 'MIG_EXP#%';
 
 -- Insert expense_report rows. Use a migration tag in createdBy to map newly created report ids back to original expense rows.
 INSERT INTO expense_report (
@@ -56,7 +66,7 @@ SELECT
     ) AS deptCode,
     (
       SELECT CASE
-               WHEN mes.division_json IS NULL THEN NULL
+               WHEN mes.division_json IS NULL OR JSON_VALID(mes.division_json) = 0 THEN NULL
                ELSE LEFT(
                       JSON_UNQUOTE(JSON_EXTRACT(mes.division_json, '$[0].code')),
                       3
@@ -196,3 +206,4 @@ WHERE c.id IS NULL;
 
 SET SQL_SAFE_UPDATES = 1;
 COMMIT;
+SET SQL_SAFE_UPDATES = @prev_sql_safe_updates;
