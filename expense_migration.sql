@@ -127,10 +127,14 @@ SELECT
   COALESCE(e.expense_date, DATE(@now)) AS date,
   CAST(
     CASE
-      WHEN REPLACE(REPLACE(REPLACE(TRIM(e.expense_quantity), ',', ''), '(', ''), ')', '') NOT REGEXP '^-?[0-9]+(\\.[0-9]+)?$' THEN '1'
-      WHEN REPLACE(REPLACE(REPLACE(TRIM(e.expense_quantity), ',', ''), '(', ''), ')', '') LIKE '%.%' THEN '1'
-      WHEN CAST(REPLACE(REPLACE(REPLACE(TRIM(e.expense_quantity), ',', ''), '(', ''), ')', '') AS DECIMAL(20,4)) <= 0 THEN '1'
-      ELSE REPLACE(REPLACE(REPLACE(TRIM(e.expense_quantity), ',', ''), '(', ''), ')', '')
+      WHEN REPLACE(REPLACE(REPLACE(TRIM(e.expense_quantity), ',', ''), '(', ''), ')', '') NOT REGEXP '^[0-9]+(\\.[0-9]+)?$' THEN 1
+      WHEN CAST(REPLACE(REPLACE(REPLACE(TRIM(e.expense_quantity), ',', ''), '(', ''), ')', '') AS DECIMAL(20,4)) <= 0 THEN 1
+      ELSE GREATEST(
+               FLOOR(
+                   CAST(REPLACE(REPLACE(REPLACE(TRIM(e.expense_quantity), ',', ''), '(', ''), ')', '') AS DECIMAL(20,4))
+               ),
+               1
+           )
     END AS DECIMAL(20,4)
   ) AS qty,
   CAST(
