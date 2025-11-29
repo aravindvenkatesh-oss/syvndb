@@ -6,17 +6,21 @@ SET SQL_SAFE_UPDATES = 0;
 SET FOREIGN_KEY_CHECKS = 0;
 TRUNCATE TABLE expense;
 TRUNCATE TABLE expense_report;
+ALTER TABLE expense_report MODIFY COLUMN id INT NOT NULL;
+ALTER TABLE expense MODIFY COLUMN id INT NOT NULL;
 SET FOREIGN_KEY_CHECKS = @prev_fk_checks;
 START TRANSACTION;
 
 -- Insert expense_report rows. Use a migration tag in createdBy to map newly created report ids back to original expense rows.
 INSERT INTO expense_report (
+    id,
     orgId, submittedAt, approverName, eventName, currencyId,
     accountCode, projectCode, empId, typeId, deptCode, division,
     amount, statusId, isReimbursable, isNotDeleted,
     createdBy, createdAt, modifiedBy, modifiedAt
 )
 SELECT
+    s.id,
     1 AS orgId,
     COALESCE(s.expense_date, DATE(@now)) AS submittedAt,
     COALESCE(
@@ -121,11 +125,13 @@ FROM (
 
 -- Insert expense rows, matching the generated report via migration tag, and populate receiptId, emp/dept/division lookups.
 INSERT INTO expense (
+    id,
     categoryId, date, qty, rate, amount, paymentTypeId, description,
     createdBy, modifiedBy, createdAt, modifiedAt, isNotDeleted,
     expenseReportId, receiptId, vendorName, orgId, tax
 )
 SELECT
+  s.id,
   COALESCE(s.category_id, 1) AS categoryId,
   COALESCE(s.expense_date, DATE(@now)) AS date,
   CAST(
