@@ -23,9 +23,12 @@ SELECT
     (SELECT p.project_code FROM project p WHERE p.id = e.project_id LIMIT 1) AS projectCode,
     COALESCE(
       (SELECT mes.employee_id FROM main_employees_summary mes WHERE mes.user_id = e.createdby LIMIT 1),
-      e.emp_id
+      e.createdby
     ) AS empId,
-    COALESCE(e.type_id, 1) AS typeId,
+    CASE
+      WHEN COALESCE(e.is_from_advance,0) = 1 THEN 2
+      ELSE 1
+    END AS typeId,
     (SELECT mes.department_name FROM main_employees_summary mes WHERE mes.user_id = e.createdby LIMIT 1) AS deptCode,
     -- division: take first element of division_json if present
     (SELECT JSON_UNQUOTE(JSON_EXTRACT(mes.division_json, '$[0]'))
@@ -103,9 +106,12 @@ SELECT
   e.modifieddate AS modifiedAt,
   COALESCE(e.isactive,1) AS isNotDeleted,
   (SELECT er.id FROM expense_report er WHERE er.createdBy LIKE CONCAT('MIG_EXP#', e.id, '#%') LIMIT 1) AS expenseReportId,
-  COALESCE(
-    e.receipt_id,
-    (SELECT erc.id FROM expense_receipts erc WHERE erc.expense_id = e.id ORDER BY erc.modifieddate DESC, erc.id DESC LIMIT 1)
+  (
+    SELECT erc.id
+    FROM expense_receipts erc
+    WHERE erc.expense_id = e.id
+    ORDER BY erc.modifieddate DESC, erc.id DESC
+    LIMIT 1
   ) AS receiptId,
   NULL AS vendorName,
   1 AS orgId,
