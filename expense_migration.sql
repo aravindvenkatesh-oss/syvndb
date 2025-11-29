@@ -29,7 +29,10 @@ SELECT
       WHEN COALESCE(e.is_from_advance,0) = 1 THEN 2
       ELSE 1
     END AS typeId,
-    (SELECT mes.department_name FROM main_employees_summary mes WHERE mes.user_id = e.createdby LIMIT 1) AS deptCode,
+    LEFT(
+      (SELECT mes.department_name FROM main_employees_summary mes WHERE mes.user_id = e.createdby LIMIT 1),
+      4
+    ) AS deptCode,
     -- division: take first element of division_json if present
     (SELECT JSON_UNQUOTE(JSON_EXTRACT(mes.division_json, '$[0]'))
        FROM main_employees_summary mes WHERE mes.user_id = e.createdby LIMIT 1) AS division,
