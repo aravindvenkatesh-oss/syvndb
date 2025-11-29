@@ -10,6 +10,19 @@ SET FOREIGN_KEY_CHECKS = @prev_fk_checks;
 START TRANSACTION;
 
 -- Insert expense_report rows. Use a migration tag in createdBy to map newly created report ids back to original expense rows.
+WITH sanitized_expenses AS (
+    SELECT
+        e.*,
+        REPLACE(
+            REPLACE(
+                REPLACE(
+                    REPLACE(
+                        REPLACE(
+                            REPLACE(TRIM(e.expense_amount), ',', ''),
+                        '(', ''),')', ''), '$',''), '€',''), '₹',''
+        ) AS sanitized_amount
+    FROM expenses e
+)
 INSERT INTO expense_report (
     orgId, submittedAt, approverName, eventName, currencyId,
     accountCode, projectCode, empId, typeId, deptCode, division,
@@ -18,20 +31,20 @@ INSERT INTO expense_report (
 )
 SELECT
     1 AS orgId,
-    COALESCE(e.expense_date, DATE(@now)) AS submittedAt,
+    COALESCE(s.expense_date, DATE(@now)) AS submittedAt,
     COALESCE(
-      (SELECT mes.userfullname FROM main_employees_summary mes WHERE mes.user_id = e.manager_id LIMIT 1),
+      (SELECT mes.userfullname FROM main_employees_summary mes WHERE mes.user_id = s.manager_id LIMIT 1),
       ''
     ) AS approverName,
-    (SELECT et.trip_name FROM expense_trips et WHERE et.id = e.trip_id LIMIT 1) AS eventName,
-    e.expense_currency_id AS currencyId,
+    (SELECT et.trip_name FROM expense_trips et WHERE et.id = s.trip_id LIMIT 1) AS eventName,
+    s.expense_currency_id AS currencyId,
     (
       SELECT CASE
                WHEN a.code IS NULL THEN NULL
                ELSE LEFT(a.code, 4)
              END
       FROM account a
-      WHERE a.id = e.accountId
+      WHERE a.id = s.accountId
       LIMIT 1
     ) AS accountCode,
     (
@@ -40,15 +53,15 @@ SELECT
                ELSE LEFT(p.code, 4)
              END
       FROM project p
-      WHERE p.id = e.project_id
+      WHERE p.id = s.project_id
       LIMIT 1
     ) AS projectCode,
     COALESCE(
-      (SELECT mes.employeeId FROM main_employees_summary mes WHERE mes.user_id = e.createdby LIMIT 1),
-      e.createdby
+      (SELECT mes.employeeId FROM main_employees_summary mes WHERE mes.user_id = s.createdby LIMIT 1),
+      s.createdby
     ) AS empId,
     CASE
-      WHEN COALESCE(e.is_from_advance,0) = 1 THEN 2
+      WHEN COALESCE(s.is_from_advance,0) = 1 THEN 2
       ELSE 1
     END AS typeId,
     (
@@ -57,7 +70,7 @@ SELECT
                ELSE LEFT(mes.department_name, 3)
              END
       FROM main_employees_summary mes
-      WHERE mes.user_id = e.createdby
+      WHERE mes.user_id = s.createdby
       LIMIT 1
     ) AS deptCode,
     (
@@ -69,21 +82,15 @@ SELECT
                     )
              END
       FROM main_employees_summary mes
-      WHERE mes.user_id = e.createdby
+      WHERE mes.user_id = s.createdby
       LIMIT 1
     ) AS division,
-    -- amount: sanitized and cast; rows with invalid amount are excluded below via WHERE
-    CAST(
-      REPLACE(
-        REPLACE(
-          REPLACE(
-            REPLACE(
-              REPLACE(
-                REPLACE(TRIM(e.expense_amount), ',', ''),
-              '(', ''),')', ''), '$',''), '€',''), '₹',''
-      ) AS DECIMAL(20,4)
-    ) AS amount,
-    CASE COALESCE(e.status,'saved')
+    CASE
+      WHEN s.sanitized_amount REGEXP '^-?[0-9]+(\\.[0-9]+)?$'
+        THEN CAST(s.sanitized_amount AS DECIMAL(20,4))
+      ELSE 0
+    END AS amount,
+    CASE COALESCE(s.status,'saved')
       WHEN 'saved' THEN 1
       WHEN 'submitted' THEN 2
       WHEN 'approved' THEN 3
@@ -93,101 +100,99 @@ SELECT
       WHEN 'rejected' THEN 7
       ELSE 1
     END AS statusId,
-    COALESCE(e.is_reimbursable,0) AS isReimbursable,
-    COALESCE(e.isactive,1) AS isNotDeleted,
+    COALESCE(s.is_reimbursable,0) AS isReimbursable,
+    COALESCE(s.isactive,1) AS isNotDeleted,
     -- createdBy: include migration tag to map later: 'MIG_EXP#<expense_id>#<original_createdBy_or_name>'
-    CONCAT('MIG_EXP#', e.id, '#',
+    CONCAT('MIG_EXP#', s.id, '#',
       COALESCE(
-        (SELECT mes.userfullname FROM main_employees_summary mes WHERE mes.user_id = e.createdby LIMIT 1),
-        COALESCE(CAST(e.createdby AS CHAR), 'System')
+        (SELECT mes.userfullname FROM main_employees_summary mes WHERE mes.user_id = s.createdby LIMIT 1),
+        COALESCE(CAST(s.createdby AS CHAR), 'System')
       )
     ) AS createdBy,
-    COALESCE(e.createddate, @now) AS createdAt,
+    COALESCE(s.createddate, @now) AS createdAt,
     CASE
-      WHEN e.modifiedby IS NULL OR e.modifiedby = 0 THEN NULL
+      WHEN s.modifiedby IS NULL OR s.modifiedby = 0 THEN NULL
       ELSE COALESCE(
-             (SELECT mes.userfullname FROM main_employees_summary mes WHERE mes.user_id = e.modifiedby LIMIT 1),
-             CAST(e.modifiedby AS CHAR)
+             (SELECT mes.userfullname FROM main_employees_summary mes WHERE mes.user_id = s.modifiedby LIMIT 1),
+             CAST(s.modifiedby AS CHAR)
            )
     END AS modifiedBy,
-    e.modifieddate AS modifiedAt
-FROM expenses e
-WHERE
-  REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(e.expense_amount), ',', ''), '(', ''), ')', ''), '$', ''), '€', ''), '₹', '') REGEXP '^-?[0-9]+(\\.[0-9]+)?$'
-;
+    s.modifieddate AS modifiedAt
+FROM sanitized_expenses s;
 
 -- Insert expense rows, matching the generated report via migration tag, and populate receiptId, emp/dept/division lookups.
+WITH sanitized_expenses AS (
+    SELECT
+        e.*,
+        REPLACE(
+            REPLACE(
+                REPLACE(
+                    REPLACE(
+                        REPLACE(
+                            REPLACE(TRIM(e.expense_amount), ',', ''),
+                        '(', ''),')', ''), '$', ''), '€', ''), '₹', ''
+        ) AS sanitized_amount,
+        REPLACE(REPLACE(REPLACE(TRIM(e.expense_quantity), ',', ''), '(', ''), ')', '') AS sanitized_qty
+    FROM expenses e
+)
 INSERT INTO expense (
     categoryId, date, qty, rate, amount, paymentTypeId, description,
     createdBy, modifiedBy, createdAt, modifiedAt, isNotDeleted,
     expenseReportId, receiptId, vendorName, orgId, tax
 )
 SELECT
-  COALESCE(e.category_id, 1) AS categoryId,
-  COALESCE(e.expense_date, DATE(@now)) AS date,
+  COALESCE(s.category_id, 1) AS categoryId,
+  COALESCE(s.expense_date, DATE(@now)) AS date,
   CAST(
     CASE
-      WHEN REPLACE(REPLACE(REPLACE(TRIM(e.expense_quantity), ',', ''), '(', ''), ')', '') NOT REGEXP '^[0-9]+(\\.[0-9]+)?$' THEN 1
-      WHEN CAST(REPLACE(REPLACE(REPLACE(TRIM(e.expense_quantity), ',', ''), '(', ''), ')', '') AS DECIMAL(20,4)) <= 0 THEN 1
+      WHEN s.sanitized_qty NOT REGEXP '^[0-9]+(\\.[0-9]+)?$' THEN 1
+      WHEN CAST(s.sanitized_qty AS DECIMAL(20,4)) <= 0 THEN 1
       ELSE GREATEST(
                FLOOR(
-                   CAST(REPLACE(REPLACE(REPLACE(TRIM(e.expense_quantity), ',', ''), '(', ''), ')', '') AS DECIMAL(20,4))
+                   CAST(s.sanitized_qty AS DECIMAL(20,4))
                ),
                1
            )
     END AS DECIMAL(20,4)
   ) AS qty,
-  CAST(
-      REPLACE(
-        REPLACE(
-          REPLACE(
-            REPLACE(
-              REPLACE(
-                REPLACE(TRIM(e.expense_amount), ',', ''),
-              '(', ''),')', ''), '$', ''), '€', ''), '₹', ''
-      ) AS DECIMAL(20,4)
-  ) AS rate,
-  CAST(
-      REPLACE(
-        REPLACE(
-          REPLACE(
-            REPLACE(
-              REPLACE(
-                REPLACE(TRIM(e.expense_amount), ',', ''),
-              '(', ''),')', ''), '$', ''), '€', ''), '₹', ''
-      ) AS DECIMAL(20,4)
-  ) AS amount,
-  e.expense_payment_id AS paymentTypeId,
-  COALESCE(e.expense_name, e.description) AS description,
+  CASE
+    WHEN s.sanitized_amount REGEXP '^-?[0-9]+(\\.[0-9]+)?$'
+      THEN CAST(s.sanitized_amount AS DECIMAL(20,4))
+    ELSE 0
+  END AS rate,
+  CASE
+    WHEN s.sanitized_amount REGEXP '^-?[0-9]+(\\.[0-9]+)?$'
+      THEN CAST(s.sanitized_amount AS DECIMAL(20,4))
+    ELSE 0
+  END AS amount,
+  s.expense_payment_id AS paymentTypeId,
+  COALESCE(s.expense_name, s.description) AS description,
   COALESCE(
-    (SELECT mes.userfullname FROM main_employees_summary mes WHERE mes.user_id = e.createdby LIMIT 1),
-    COALESCE(CAST(e.createdby AS CHAR),'System')
+    (SELECT mes.userfullname FROM main_employees_summary mes WHERE mes.user_id = s.createdby LIMIT 1),
+    COALESCE(CAST(s.createdby AS CHAR),'System')
   ) AS createdBy,
   CASE
-    WHEN e.modifiedby IS NULL OR e.modifiedby = 0 THEN NULL
+    WHEN s.modifiedby IS NULL OR s.modifiedby = 0 THEN NULL
     ELSE COALESCE(
-           (SELECT mes.userfullname FROM main_employees_summary mes WHERE mes.user_id = e.modifiedby LIMIT 1),
-           CAST(e.modifiedby AS CHAR)
+           (SELECT mes.userfullname FROM main_employees_summary mes WHERE mes.user_id = s.modifiedby LIMIT 1),
+           CAST(s.modifiedby AS CHAR)
          )
   END AS modifiedBy,
-  COALESCE(e.createddate, @now) AS createdAt,
-  e.modifieddate AS modifiedAt,
-  COALESCE(e.isactive,1) AS isNotDeleted,
-  (SELECT er.id FROM expense_report er WHERE er.createdBy LIKE CONCAT('MIG_EXP#', e.id, '#%') LIMIT 1) AS expenseReportId,
+  COALESCE(s.createddate, @now) AS createdAt,
+  s.modifieddate AS modifiedAt,
+  COALESCE(s.isactive,1) AS isNotDeleted,
+  (SELECT er.id FROM expense_report er WHERE er.createdBy LIKE CONCAT('MIG_EXP#', s.id, '#%') LIMIT 1) AS expenseReportId,
   (
     SELECT erc.id
     FROM expense_receipts erc
-    WHERE erc.expense_id = e.id
+    WHERE erc.expense_id = s.id
     ORDER BY erc.modifieddate DESC, erc.id DESC
     LIMIT 1
   ) AS receiptId,
   NULL AS vendorName,
   1 AS orgId,
   0 AS tax
-FROM expenses e
-WHERE
-  REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(e.expense_amount), ',', ''), '(', ''), ')', ''), '$', ''), '€', ''), '₹', '') REGEXP '^-?[0-9]+(\\.[0-9]+)?$'
-;
+FROM sanitized_expenses s;
 
 -- Restore createdBy in expense_report to the original value (remove the migration tag)
 UPDATE expense_report
