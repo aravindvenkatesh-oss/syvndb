@@ -30,7 +30,10 @@ SELECT
       ELSE 1
     END AS typeId,
     LEFT(
-      (SELECT mes.department_name FROM main_employees_summary mes WHERE mes.user_id = e.createdby LIMIT 1),
+      COALESCE(
+        (SELECT mes.department_name FROM main_employees_summary mes WHERE mes.user_id = e.createdby LIMIT 1),
+        'UNK'
+      ),
       4
     ) AS deptCode,
     -- division: take first element of division_json if present
