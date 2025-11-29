@@ -19,8 +19,24 @@ SELECT
     ) AS approverName,
     (SELECT et.trip_name FROM expense_trips et WHERE et.id = e.trip_id LIMIT 1) AS eventName,
     e.expense_currency_id AS currencyId,
-    (SELECT a.account_code FROM account a WHERE a.id = e.accountId LIMIT 1) AS accountCode,
-    (SELECT p.project_code FROM project p WHERE p.id = e.project_id LIMIT 1) AS projectCode,
+    (
+      SELECT CASE
+               WHEN a.code IS NULL THEN NULL
+               ELSE LEFT(a.code, 4)
+             END
+      FROM account a
+      WHERE a.id = e.accountId
+      LIMIT 1
+    ) AS accountCode,
+    (
+      SELECT CASE
+               WHEN p.code IS NULL THEN NULL
+               ELSE LEFT(p.code, 4)
+             END
+      FROM project p
+      WHERE p.id = e.project_id
+      LIMIT 1
+    ) AS projectCode,
     COALESCE(
       (SELECT mes.employee_id FROM main_employees_summary mes WHERE mes.user_id = e.createdby LIMIT 1),
       e.createdby
