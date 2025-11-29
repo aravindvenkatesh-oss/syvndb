@@ -123,7 +123,7 @@ BEGIN
         );
 
         SET v_manager_name = (
-            SELECT employee_name
+            SELECT userfullname
             FROM main_employees_summary
             WHERE employee_id = v_manager_id
             LIMIT 1
@@ -136,7 +136,7 @@ BEGIN
         END IF;
 
         SET v_emp_name = (
-            SELECT employee_name
+            SELECT userfullname
             FROM main_employees_summary
             WHERE employee_id = v_emp_id
             LIMIT 1
@@ -252,3 +252,8 @@ END$$
 DELIMITER ;
 CALL migrate_expenses();
 DROP PROCEDURE IF EXISTS migrate_expenses;
+
+-- Normalize any placeholder creators generated during migration
+UPDATE expense_report
+SET createdBy = SUBSTRING_INDEX(createdBy, '#', -1)
+WHERE createdBy LIKE 'MIG_EXP#%';
